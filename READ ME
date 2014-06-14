@@ -1,0 +1,75 @@
+READ ME
+
+reverse engineering the avrdude in order to program Arduino UNO over air using RFduinos
+
+it's amazing what can be accomplished, when you really apply yourself.
+	-mom
+
+The serial transfer is pretty transparent.
+baue rate is 115200
+communication has clear prefix - postfix behavior
+programmer prefix 'COMMAND'	char value designates following data/request
+programmer postfix 0x20, cause 0x20
+target prefix 0x14
+target postfix 0x10
+
+questions about page writing/reading, which data can contain the pre-post-fix
+the pages are written in standard size of 132 bytes + 0x20
+the pages are read in standard size of 128 bytes + 0x10
+
+page writing COMMAND is 'd'	sent from programmer (pc)
+page reading COMMAND is 't'	sent from programmer (pc)
+
+QUESTION
+	how to know when the last page gets written/read, which is not the same standard size
+
+EXAMPLE: last read-verify page from blinkWithSerial
+	standard read/verify length = 128 bytes + 0x10
+	message = Send: t [74] . [00] . [80] F [46]   [20] 
+	count of final page bytes = 46 bytes + 0x10
+	message Send: t [74] . [00] . [2e] F [46]   [20]
+
+The third byte in 't' determines length of page!
+
+EXAMPLE: last write page from blinkWithSerial
+	standard write length = 132 bytes + 0x20 (0x84)
+	message = U [55] . [c0] . [04]   [20]
+		first byte counts 0x00, 0x40, 0x80, 0xc0
+		second byte counts MSB in linear
+	count of final page bytes = 50 bytes + 0x20 (0x32)
+	message = Send: U [55] . [00] . [05]   [20]
+
+	toal number of pages = 0x00 0x05 (20 pages + partial page) (0x14)
+
+the 'U' command is not reliable here
+
+when writing there's no indication of program length. must be a timeout on the target?
+Thinking that a timer will be necessary on the write side of transaction. read side is  pretty sewed up.
+
+the RFduino needs to pack the data into 32 byte packets.
+the read-verify transaction uses 4 packets (128 bytes), until the last page, which length is announced in 't' COMMAND parameter.
+read-verify is easy to coordinate.
+
+the write is problematic because the 0x20 is blind. 132 bytes = 4.125 packets (32bytes x 4 + 4)
+
+<<<<<<<<< HOST PSUEDO-CODE >>>>>>>>>>>
+
+the host needs to look for 0x20s when it is in write mode. it should determine that the message ends when it sees 0x20 in normal communication, but in write mode, it needs some kind of timer if it encounters a 0x20 in the stream. if no transmission occurs after some time, then timeOut occurs. if the 0x20 happens and there's a timeOut, then the packet should be sent. there should be a maxSize based on the 132 write size standard. 
+
+all other COMMANDS will just wait for the 0x20 to send.
+
+<<<<<<<<< HOST PSUEDO-CODE >>>>>>>>>>>
+
+
+<<<<<<<<< DEVICE PSUEDO-CODE >>>>>>>>>>>
+
+DEVICE polls HOST in between COMMAND responces and during data transfers. 
+when DEVICE sees 0x14 first, a packet is built until 0x10
+if DEVICE gets 't' it should look for 0x10 at included length address.
+
+when DEVICE gets 'd' it should look for a 0x10 with a timer to find EOT, then it sends out the packet 
+
+<<<<<<<<< DEVICE PSUEDO-CODE >>>>>>>>>>>
+
+
+alternately, each side could send bytes individually....
