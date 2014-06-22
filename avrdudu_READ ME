@@ -1,0 +1,85 @@
+READ ME
+
+240
+
+reverse engineering the avrdude in order to program Arduino UNO over air using RFduinos
+
+it's amazing what can be accomplished, when you really apply yourself.
+	-mom
+
+The serial transfer is pretty transparent.
+for UNO the baud rate is 115200
+communication has clear prefix - postfix behavior
+
+programmer prefix 'COMMAND'	char value designates following data/request
+programmer postfix 0x20 [Jackson]
+
+target prefix 0x14	reliably consistent constant 
+target postfix 0x10	[Hamilton]
+
+
+Code Pages are written in standard size of 133 continuous bytes
+avrdude sends ['d' + 2 byte page size + 'F' + 128 bytes + 0x20]
+target sends [0x14 + 0x10]
+
+Code Pages are verified in standard size of 130 continuous bytes 
+avrdude sends ['t' + 2 byte page size + 'F' + 0x20]
+target sends [0x14 + 128 bytes + 0x10]
+
+page address command is 'U'	sent from programmer (pc)
+	parameters increment target page address
+	first parameter increments 0x00, 0x40, 0x80, 0xc0 with each page
+	second parameter is msb to first, carrying the one (linear)
+
+page reading COMMAND is 't'	sent from programmer (pc)
+	parameters define size of page to read
+
+QUESTION
+	how to know when the last page gets written/read, and what the length is?
+
+EXAMPLE: last read-verify page from blinkWithSerial
+	Standard read/verify length = 0x14 + 128 bytes + 0x10
+	Standard avrdude message = t [74] . [00] . [80] F [46]   [20] 
+	Final page bytes = 0x14 + 94 bytes + 0x10
+	Final avrdude message = t [74] . [00] . [5e] F [46]   [20]
+
+Byte [2] in 't' command determines length of upload page!
+
+EXAMPLE: last write page from blinkWithSerial
+	Standard write length = 'd' + pageLength + 'F' + 128 bytes + 0x20
+	avrdude message = d [64] . [00] . [80] F [46] ...
+	Final page length = 'd' + pageLength + 'F' + 94 bytes + 0x20
+	Final avrdude message = d [64] . [00] ^ [5e]  F  [46]
+
+Byte [2] in 'd' command determines length of verify page!
+
+RFduino needs to pack the data into 32 byte packets.
+pass-thru needs to read avr command bytes to find page length efficiently
+all other transactions are small enough to simply wait for the post-fix char
+
+<<<<<<<<< HOST PSUEDO-CODE >>>>>>>>>>>
+
+the HOST needs to look for 0x20s in the serial feed. it should decide that the message ends when it sees 0x20 in normal communication.
+
+when it encounters 'd' command it goes into upload mode, finds the page length, and verifies the 0x20 post-fix
+
+when it encounters 't' command it goes into verify mode, finds the page length, and verifies the 0x10 post-fix
+
+all commands other than 'd' or 't' will just wait for the 0x20 to send.
+
+<<<<<<<<< HOST PSUEDO-CODE >>>>>>>>>>>
+
+
+<<<<<<<<< DEVICE PSUEDO-CODE >>>>>>>>>>>
+
+DEVICE must poll HOST to receive from HOST. for this, a (NULL,0) is sent
+
+the DEVICE needs to look for 0x10 in serial string. it should decide that the message endds when it sees 0x10 in normal communication.
+
+if DEVICE gets 't' it should look for the page length bytes.
+
+when DEVICE gets 'd' it should look for the page length bytes.
+
+<<<<<<<<< DEVICE PSUEDO-CODE >>>>>>>>>>>
+
+question: how will the HOST handle radio operation and will the gazelle buffer be handle the 4+ packet transfers?
