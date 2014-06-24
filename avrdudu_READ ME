@@ -43,7 +43,7 @@ EXAMPLE: last read-verify page from blinkWithSerial
 	Final page bytes = 0x14 + 94 bytes + 0x10
 	Final avrdude message = t [74] . [00] . [5e] F [46]   [20]
 
-Byte [2] in 't' command determines length of upload page!
+Byte [2] in 't' command determines length of verify page!
 
 EXAMPLE: last write page from blinkWithSerial
 	Standard write length = 'd' + pageLength + 'F' + 128 bytes + 0x20
@@ -51,7 +51,7 @@ EXAMPLE: last write page from blinkWithSerial
 	Final page length = 'd' + pageLength + 'F' + 94 bytes + 0x20
 	Final avrdude message = d [64] . [00] ^ [5e]  F  [46]
 
-Byte [2] in 'd' command determines length of verify page!
+Byte [2] in 'd' command determines length of upload page!
 
 RFduino needs to pack the data into 32 byte packets.
 pass-thru needs to read avr command bytes to find page length efficiently
