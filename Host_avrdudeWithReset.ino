@@ -89,19 +89,18 @@ void loop(){
     radioToSend = false;             // reset radioToSend flag
   }
   
-}
 
-
-void serialEvent(){      
+if (Serial.available()){      
     while(Serial.available() > 0){            // when the serial port is active
       serialBuffer[bufferLevel][serialIndex[bufferLevel]] = Serial.read();    
       serialIndex[bufferLevel]++;             // count up the buffer size
       if(serialIndex[bufferLevel] == 32);     // when the buffer is full,
         bufferLevel++;			      // next buffer please
       }  // if we just got the last byte, and advanced the bufferLevel, the serialTimeout will catch it
-    }
     serialTiming = true;                      // set serialTiming flag    
     serialTimer = millis();                   // start the time-out clock
+  }
+  
 }// end of loop
 
 

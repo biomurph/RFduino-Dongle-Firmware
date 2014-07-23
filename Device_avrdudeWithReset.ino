@@ -18,15 +18,15 @@ Free to use and share. This code presented as-is. No promises!
 device_t role = DEVICE0;  // This is the DEVICE code
 
 const int numBuffers = 10;              // buffer depth
-char serialBuffer[numBuffers] [32];  	// buffers to hold serial data
-int bufferLevel = 0;                 	// counts which buffer array we are using
-int serialIndex[numBuffers];         	// Buffer position counter
-int numPackets = 0;                  	// number of packets to send/receive on radio
+char serialBuffer[numBuffers] [32];   // buffers to hold serial data
+int bufferLevel = 0;                  // counts which buffer array we are using
+int serialIndex[numBuffers];          // Buffer position counter
+int numPackets = 0;                   // number of packets to send/receive on radio
 int serialBuffCounter = 0;
 unsigned long serialTimer;              // used to time end of serial message
 
-char radioBuffer[300];		        // buffer to hold radio data
-int radioIndex = 0;                  	// used in sendToHost to protect len value
+char radioBuffer[300];            // buffer to hold radio data
+int radioIndex = 0;                   // used in sendToHost to protect len value
 int packetCount = 0;                    // used to keep track of packets in received radio message
 int packetsReceived = 0;                // used to count incoming packets
 
@@ -35,28 +35,24 @@ boolean radioToSend = false;      // set when radio data is ready to go to seria
 boolean serialTiming = false;     // used to time end of serial message
 
 unsigned long lastPoll;         // used to time null message to host
-unsigned int pollTime = 100;    // time between polls when idling
 
-int resetPin = 6;               // GPIO6 is connected to Arduino UNO pin with 1uF cap in series
+int resetPin = 6;               // GPIO5 is connected to Arduino UNO pin with 1uF cap in series
 boolean toggleReset = false;    // reset flat
 
 
 void setup(){
-  
   RFduinoGZLL.begin(role);  // start the GZLL stack
-  Serial.begin(115200);     // start the serial port
+  Serial.begin(115200,3,2);     // start the serial port, rx = GPIO3, tx = GPIO2
   
-  serialIndex[0] = 1;          // save buffer[0][0] to hold number of packets!
-  for(int i=1; i<numBuffers; i++){
-    serialIndex[i] = 0;        // initialize indexes to 0
-  }
-  
-
+  initBuffer();
+   
   lastPoll = millis();    // set time to perfom next poll 
   
   pinMode(resetPin,OUTPUT);      // set direction of GPIO6
   digitalWrite(resetPin,HIGH);   // take Arduino out of reset
   
+//  pinMode(0,INPUT);
+//  pinMode(1,INPUT);
   
 }
 
@@ -65,11 +61,11 @@ void setup(){
 void loop(){
   
   if(serialTiming){                      // if the serial port is active
-    if(millis() - serialTimer > 2){      // if the time is up
+    if(millis() - serialTimer > 1){      // if the time is up
       if(serialIndex[bufferLevel] == 0){bufferLevel--;}  // don't send more buffers than we have!
-      serialBuffer[0][0] = bufferLevel +1;	// drop the number of packets into zero position
-      serialBuffCounter = 0;          		// keep track of how many buffers we send
-      serialTiming = false;	       // clear serialTiming flag
+      serialBuffer[0][0] = bufferLevel +1;  // drop the number of packets into zero position
+      serialBuffCounter = 0;              // keep track of how many buffers we send
+      serialTiming = false;        // clear serialTiming flag
       serialToSend = true;             // set serialToSend flag
       lastPoll = millis();             // put off sending a scheduled poll
       RFduinoGZLL.sendToHost(NULL,0);  // send a poll right now to get the ack back
@@ -78,7 +74,7 @@ void loop(){
 
     
   if (millis() - lastPoll > 50){  // make sure to ping the host if they want to send packet
-    if(!serialTiming && !serialToSend){  // don't poll if we are doing something important!
+    if(!serialTiming && !serialToSend && !radioToSend){  // don't poll if we are doing something important!
       RFduinoGZLL.sendToHost(NULL,0);
     }
     lastPoll = millis();          // set timer for next poll time
@@ -97,8 +93,8 @@ if(Serial.available()){
   while(Serial.available() > 0){          // while the serial is active
     serialBuffer[bufferLevel][serialIndex[bufferLevel]] = Serial.read();    
     serialIndex[bufferLevel]++;           // count up the buffer size
-    if(serialIndex[bufferLevel] == 32){	  // when the buffer is full,
-      bufferLevel++;			  // next buffer please
+    if(serialIndex[bufferLevel] == 32){   // when the buffer is full,
+      bufferLevel++;        // next buffer please
     }  // if we just got the last byte, and advanced the bufferLevel, the serialTimeout will catch it
   }
   serialTiming = true;                   // set serialTiming flag
@@ -109,36 +105,31 @@ if(Serial.available()){
 
 
 
-void RFduinoGZLL_onReceive(device_t device, int rssi, char *data, int len)
+void RFduinoGZLL_onReceive(device_t DEVICE0, int rssi, char *data, int len)
 {
   
-  if(serialToSend){	// send buffer to host during onReceive so as not to clog the radio
+  if(serialToSend){ // send buffer to host during onReceive so as not to clog the radio
     RFduinoGZLL.sendToHost(serialBuffer[serialBuffCounter], serialIndex[serialBuffCounter]);
-    serialBuffCounter++;	      // get ready for next buffered packet
+    serialBuffCounter++;        // get ready for next buffered packet
     if(serialBuffCounter == bufferLevel +1){// when we send all the packets
-      serialToSend = false; 		    // put down bufferToSend flag
-      bufferLevel = 0;			    // initialize bufferLevel
-      serialIndex[0] = 1;		    // leave room for packet count
-      for(int i=1; i<numBuffers; i++){	
-        serialIndex[i] = 0;		    // initialize serialInexes
-      }
+      serialToSend = false;         // put down bufferToSend flag
+      bufferLevel = 0;          // initialize bufferLevel
+      initBuffer();
     }
   }
   
-  
-  if(len > 0){
-    int startIndex = 0;	                // get ready to read this packet from 0
-    if(packetCount == 0){	        // if this first packet in transaction  
-      if(testFirstByte(data[0])){       // if we get a '$' or '#' 
-        char dummy[32];                 // set up a trash can
-        for(int i=0; i<len; i++){
-          dummy[i] = data[i];           // put everything in the trash
-        }                               
+  if(len == 1){
+     if(testFirstByte(data[0])){       // if we get a '$' or '#' 
         return;                         // get outa here!
       }                         // if we didn't get a '$' or '#' the first byte = number of packets 
-      packetCount = data[0];	// get the number of packets to expect in message
-      startIndex = 1;		// skip the first byte when retrieving radio data
-    }		
+  }
+  
+  if(len > 0){
+    int startIndex = 0;                 // get ready to read this packet from 0
+    if(packetCount == 0){         // if this first packet in transaction 
+      packetCount = data[0];  // get the number of packets to expect in message
+      startIndex = 1;   // skip the first byte when retrieving radio data
+    }   
     for(int i = startIndex; i < len; i++){
       radioBuffer[radioIndex] = data[i];  // read packet into radioBuffer
       radioIndex++;                       // increment the radioBuffer index counter
@@ -147,7 +138,7 @@ void RFduinoGZLL_onReceive(device_t device, int rssi, char *data, int len)
     if(packetsReceived == packetCount){   // when we get all the packets
       packetsReceived = 0;                // reset packets Received for next time
       packetCount = 0;                    // reset packetCount for next time
-      radioToSend = true;	          // set radioToSend flag
+      radioToSend = true;           // set radioToSend flag
     }else{                                // if we're still expecting packets,
       RFduinoGZLL.sendToHost(NULL,0);     // poll host for next packet
     }
@@ -178,3 +169,9 @@ boolean testFirstByte(char z){  // test the first byte of a new radio packet for
 }
   
 
+void initBuffer(){
+  serialIndex[0] = 1;          // save buffer[0][0] to hold number of packets!
+  for(int i=1; i<numBuffers; i++){
+    serialIndex[i] = 0;        // initialize indexes to 0
+  }
+}
