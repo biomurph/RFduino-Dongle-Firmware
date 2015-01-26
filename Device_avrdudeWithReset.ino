@@ -51,8 +51,6 @@ void setup(){
   pinMode(resetPin,OUTPUT);      // set direction of GPIO6
   digitalWrite(resetPin,HIGH);   // take Arduino out of reset
   
-//  pinMode(0,INPUT);
-//  pinMode(1,INPUT);
   
 }
 
